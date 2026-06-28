@@ -6,6 +6,8 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
+let useLocalFallbackOnly = false;
+
 // High-fidelity fallback scheduling system that dynamically mimics our AI scheduling behavior locally
 function generateSmartFallbackSystem(brainDump: string, userRole: string | null) {
   // 1. Clean and split the brain dump into individual task candidate strings
@@ -303,9 +305,9 @@ async function startServer() {
         return res.status(400).json({ error: "brainDump is required" });
       }
 
-      // Check if API Key is missing and trigger smart fallback immediately to prevent 403 scope error
-      if (!process.env.GEMINI_API_KEY) {
-        console.warn("GEMINI_API_KEY is not defined, generating smart local fallback productivity system...");
+      // Check if API Key is missing or local fallback is active
+      if (!process.env.GEMINI_API_KEY || useLocalFallbackOnly) {
+        console.warn("GEMINI_API_KEY is not defined or local fallback active, generating smart local fallback productivity system...");
         const fallbackSystem = generateSmartFallbackSystem(brainDump, userRole);
         return res.json({ ...fallbackSystem, apiKeyMissing: true });
       }
@@ -339,7 +341,7 @@ Follow these instructions precisely:
 Format the output strictly according to the specified JSON schema. Do not include any text outside the JSON.`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-2.5-flash",
         contents: prompt,
         config: {
           systemInstruction: "You are Nova, an expert personal productivity assistant and executive coach. Your goal is to parse messy user brain dumps, organize them into clear actionable tasks with automated detailed subtasks, distribute their sessions realistically over a multi-day timeline, and output a complete productivity system.",
@@ -465,6 +467,7 @@ Format the output strictly according to the specified JSON schema. Do not includ
       res.json({ ...systemData, apiKeyMissing: false });
     } catch (error: any) {
       console.error("Gemini Unified Plan Error, falling back to smart local scheduler:", error);
+      useLocalFallbackOnly = true;
       try {
         const fallbackSystem = generateSmartFallbackSystem(req.body.brainDump || "", req.body.userRole || null);
         res.json({ ...fallbackSystem, apiKeyMissing: true, errorMsg: error.message });
@@ -479,9 +482,9 @@ Format the output strictly according to the specified JSON schema. Do not includ
     try {
       const { tasks, currentPlan, reason, userRole } = req.body;
 
-      if (!process.env.GEMINI_API_KEY) {
+      if (!process.env.GEMINI_API_KEY || useLocalFallbackOnly) {
         // High fidelity mock replanning message and rescheduling when local/fallback
-        console.warn("GEMINI_API_KEY is not defined, using mock replanning engine...");
+        console.warn("GEMINI_API_KEY is not defined or local fallback active, using mock replanning engine...");
         const lowerReason = (reason || "").toLowerCase();
 
         if (lowerReason.includes("deleted") || lowerReason.includes("removing") || lowerReason.includes("removed")) {
@@ -542,24 +545,31 @@ Format the output strictly according to the specified JSON schema. Do not includ
       const currentDayName = daysOfWeek[today.getDay()];
       const currentDateString = today.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
-      const prompt = `The user skipped, missed, or didn't finish some sessions.
-Reason: "${reason || 'Session skipped or uncompleted'}".
+      const prompt = `The user clicked "Replan My Week" to recalculate and reorganize their weekly plan.
+Reason: "${reason || 'Weekly adjustment based on progress and deadlines'}".
 Today is ${currentDateString} (${currentDayName}).
-Here is their current Task list (with completions): ${JSON.stringify(tasks)}
+Here is their current Task list: ${JSON.stringify(tasks)}
 Here is their current Execution Plan: ${JSON.stringify(currentPlan)}
 
-Please update their Execution Plan intelligently. 
-1. Reschedule uncompleted/skipped sessions to the next available day/time.
-2. Shorten other less critical sessions (e.g. general exercise or practice) if needed to keep them on schedule to meet high-priority deadlines.
-3. Write an encouraging executive-function coach notification explaining exactly what was shifted and why (e.g. 'I noticed today's assignment session wasn't completed. I've moved Model Building to tomorrow morning and shortened your DSA practice so you'll still finish before Monday.'). Make this message warm, friendly, and helpful.
-4. Output the updated Execution Plan and the coaching notification.
-5. Ensure the execution plan starts from today (${currentDayName}) and covers the next 4 upcoming days, shifting all sessions and dayNames to match.`;
+Please recalculate and update their Execution Plan intelligently following these critical instructions:
+1. Redistribute all unfinished work/tasks across the remaining days of the plan.
+2. Remove completed tasks (status is 'Completed' or progress is 100) from the schedule completely. Do not recreate completed tasks.
+3. Ignore deleted tasks (tasks that are no longer in the provided Task list).
+4. Include any newly added tasks (tasks in the list that do not currently have sessions in the plan). Do not duplicate existing tasks.
+5. Prioritize tasks with the nearest deadlines and highest priorities.
+6. Balance the workload realistically across the week. Avoid scheduling too many hours or too many sessions in a single day.
+7. Generate new daily focus sessions for the tasks, ensuring each session references the correct taskId.
+8. Update Nova recommendations and the daily mission to match this updated structure.
+9. Keep task details unchanged: never modify the user's original task descriptions or titles. Only adjust the scheduling, ordering, time allocation, and recommendations.
+10. Preserve all task IDs (taskId) in the sessions so they remain linked to the tasks correctly.
+11. Write a warm, encouraging executive-function coach notification explaining exactly what was shifted, prioritized, or optimized and why.
+12. Ensure the execution plan starts from today (${currentDayName}) and covers the next 4 upcoming days, shifting all sessions and dayNames to match.`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-2.5-flash",
         contents: prompt,
         config: {
-          systemInstruction: "You are Nova, an executive function coach. Your job is to automatically replan the user's schedule when they fall behind or skip sessions, keeping them comfortable and focused on finishing before their deadlines.",
+          systemInstruction: "You are Nova, Ahead's AI execution coach. Your job is to automatically replan the user's schedule when they fall behind, skip sessions, or request a replan, keeping them comfortable and focused on finishing before their deadlines.",
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
@@ -579,10 +589,11 @@ Please update their Execution Plan intelligently.
                             type: Type.OBJECT,
                             properties: {
                               taskTitle: { type: Type.STRING },
+                              taskId: { type: Type.STRING },
                               timeSlot: { type: Type.STRING },
                               estimatedMinutes: { type: Type.INTEGER }
                             },
-                            required: ["taskTitle", "timeSlot", "estimatedMinutes"]
+                            required: ["taskTitle", "taskId", "timeSlot", "estimatedMinutes"]
                           }
                         }
                       },
@@ -642,12 +653,67 @@ Please update their Execution Plan intelligently.
       const replannedData = JSON.parse(responseText.trim());
       res.json({ ...replannedData, apiKeyMissing: false });
     } catch (error: any) {
-      console.error("Replan Error:", error);
-      res.status(500).json({ error: "Failed to replan" });
+      console.error("Replan Error, falling back:", error);
+      useLocalFallbackOnly = true;
+      try {
+        const lowerReason = (req.body.reason || "").toLowerCase();
+        const currentPlan = req.body.currentPlan || { days: [], dashboardData: {} };
+        const tasks = req.body.tasks || [];
+
+        if (lowerReason.includes("deleted") || lowerReason.includes("removing") || lowerReason.includes("removed")) {
+          return res.json({
+            executionPlan: {
+              ...currentPlan,
+              novaNotification: "Nova updated your execution plan after removing the task."
+            },
+            apiKeyMissing: true,
+            errorMsg: error.message
+          });
+        }
+
+        const incompleteTask = tasks?.find((t: any) => t.status !== "Completed" && t.status !== "completed");
+        const taskTitle = incompleteTask?.title || tasks?.[0]?.title || "tasks";
+        const notification = `I noticed some of your sessions for "${taskTitle}" weren't completed. I've rescheduled them to the next available block to keep you on track.`;
+
+        const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+        const today = new Date();
+        const dayNames: string[] = [];
+        for (let i = 0; i < 5; i++) {
+          const d = new Date();
+          d.setDate(today.getDate() + i);
+          dayNames.push(daysOfWeek[d.getDay()]);
+        }
+
+        const originalDays = currentPlan?.days || [];
+        const updatedDays = originalDays.map((d: any, idx: number) => {
+          return {
+            ...d,
+            dayName: dayNames[idx] || d.dayName,
+            sessions: (d.sessions || []).map((s: any) => ({
+              ...s,
+              date: dayNames[idx] || d.dayName
+            }))
+          };
+        });
+
+        res.json({
+          executionPlan: {
+            ...currentPlan,
+            days: updatedDays,
+            novaNotification: notification
+          },
+          apiKeyMissing: true,
+          errorMsg: error.message
+        });
+      } catch (fallbackError) {
+        res.status(500).json({ error: "Failed to replan even with fallback" });
+      }
     }
   });
 
   app.post("/api/add-task", async (req: express.Request, res: express.Response) => {
+    let fallbackTask: any = null;
+    let fallbackPlan: any = null;
     try {
       const { taskInput, tasks = [], currentPlan, userRole, brainDump } = req.body;
       if (!taskInput?.title) {
@@ -667,7 +733,7 @@ Please update their Execution Plan intelligently.
         fallbackRecommendation = `Complete the initial draft or data cleaning section first. It unlocks the rest of your assignment.`;
       }
 
-      const fallbackTask = {
+      fallbackTask = {
         id: Math.random().toString(36).substring(2, 11),
         title: taskInput.title,
         description: taskInput.description || `Complete ${taskInput.title} with a focused execution block.`,
@@ -684,7 +750,7 @@ Please update their Execution Plan intelligently.
         ]
       };
 
-      const fallbackPlan = currentPlan ? {
+      fallbackPlan = currentPlan ? {
         ...currentPlan,
         days: currentPlan.days?.length ? currentPlan.days.map((day: any, index: number) => {
           if (index !== 0) return day;
@@ -724,7 +790,7 @@ Please update their Execution Plan intelligently.
         novaNotification: `I added "${fallbackTask.title}" and updated your execution plan.`
       } : null;
 
-      if (!process.env.GEMINI_API_KEY) {
+      if (!process.env.GEMINI_API_KEY || useLocalFallbackOnly) {
         return res.json({ task: fallbackTask, executionPlan: fallbackPlan, apiKeyMissing: true });
       }
 
@@ -748,7 +814,7 @@ Ensure that the task, its subtasks, and the scheduled sessions in the execution 
 - Do not schedule short 10-20 minute blocks for tasks that require real focus or physical preparation.`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-2.5-flash",
         contents: prompt,
         config: {
           systemInstruction: "You are Nova, an AI execution coach. Return only JSON. Create practical subtasks and update the execution plan to help the user finish before deadlines.",
@@ -882,8 +948,13 @@ Ensure that the task, its subtasks, and the scheduled sessions in the execution 
 
       res.json({ task, executionPlan, apiKeyMissing: false });
     } catch (error: any) {
-      console.error("Add Task Error:", error);
-      res.status(500).json({ error: "Failed to add task" });
+      console.error("Add Task Error, falling back:", error);
+      useLocalFallbackOnly = true;
+      try {
+        res.json({ task: fallbackTask, executionPlan: fallbackPlan, apiKeyMissing: true, errorMsg: error.message });
+      } catch (fallbackError) {
+        res.status(500).json({ error: "Failed to add task even with fallback" });
+      }
     }
   });
 
@@ -894,7 +965,7 @@ Ensure that the task, its subtasks, and the scheduled sessions in the execution 
         return res.status(400).json({ error: "message is required" });
       }
 
-      if (!process.env.GEMINI_API_KEY) {
+      if (!process.env.GEMINI_API_KEY || useLocalFallbackOnly) {
         return res.json({
           reply: `For "${currentSubtask || task?.title || "this step"}", start by naming the exact output you need, then work in one small block before checking anything else. Based on your notes, keep the answer practical and tied to the current task.`,
           apiKeyMissing: true
@@ -915,7 +986,7 @@ Current context:
 Answer as Nova, an intelligent executive assistant inside Focus Mode. Be concise, useful, and context-aware. Help the user complete the current step without sending them away from the page.`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-2.5-flash",
         contents: prompt,
         config: {
           systemInstruction: "You are Nova, Ahead's AI execution coach. You are not a generic chatbot. You know the user's current work context and help them finish the active task.",
@@ -924,8 +995,13 @@ Answer as Nova, an intelligent executive assistant inside Focus Mode. Be concise
 
       res.json({ reply: response.text || "Stay with the current step and complete the smallest useful next action.", apiKeyMissing: false });
     } catch (error: any) {
-      console.error("Nova Chat Error:", error);
-      res.status(500).json({ error: "Failed to answer Nova chat" });
+      console.error("Nova Chat Error, falling back:", error);
+      useLocalFallbackOnly = true;
+      res.json({
+        reply: `For "${req.body.currentSubtask || req.body.task?.title || "this step"}", start by naming the exact output you need, then work in one small block before checking anything else. Based on your notes, keep the answer practical and tied to the current task.`,
+        apiKeyMissing: true,
+        errorMsg: error.message
+      });
     }
   });
 

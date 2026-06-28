@@ -4,14 +4,16 @@ import { Plus } from 'lucide-react';
 import { ScreenType, UserProfile, Task, ExecutionPlan } from './types';
 
 // Firebase imports
+import { type User } from 'firebase/auth';
 import { 
+  auth, 
+  db, 
+  handleFirestoreError, 
+  OperationType,
   signInWithPopup, 
   GoogleAuthProvider, 
   onAuthStateChanged, 
   signOut,
-  type User 
-} from 'firebase/auth';
-import { 
   doc, 
   setDoc, 
   getDoc, 
@@ -22,8 +24,7 @@ import {
   where,
   limit,
   writeBatch
-} from 'firebase/firestore';
-import { auth, db, handleFirestoreError, OperationType } from './lib/firebase';
+} from './lib/firebase';
 
 const sanitizePayload = (payload: any): any => {
   return JSON.parse(JSON.stringify(payload, (key, value) => value === undefined ? null : value));

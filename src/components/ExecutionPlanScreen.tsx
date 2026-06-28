@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { motion } from 'motion/react';
 import { 
   Sparkles, 
   Search, 
@@ -40,6 +41,8 @@ export default function ExecutionPlanScreen({
   const [selectedDayIndex, setSelectedDayIndex] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [isReplanning, setIsReplanning] = useState(false);
+  const [replanMessage, setReplanMessage] = useState('Reviewing your progress...');
+  const [showSuccessToast, setShowSuccessToast] = useState(false);
 
   const incompleteTasks = tasks.filter(t => (t.progress || 0) < 100);
   const totalMinutes = incompleteTasks.reduce((sum, t) => sum + (t.estimatedMinutes || 0), 0);
@@ -58,13 +61,30 @@ export default function ExecutionPlanScreen({
   const filterQuery = searchQuery.toLowerCase();
 
   const handleReplanClick = async () => {
-    const reason = prompt(
-      "Why do you want to replan? (e.g., 'I got tired', 'Need to finish DSA first', 'Skip today's assignment'):", 
-      "I need to reschedule today's sessions"
-    );
-    if (reason !== null) {
-      setIsReplanning(true);
-      await onReplan(reason);
+    setIsReplanning(true);
+    setReplanMessage("Reviewing your progress...");
+    
+    const messages = [
+      "Reviewing your progress...",
+      "Checking deadlines...",
+      "Redistributing unfinished work...",
+      "Optimizing your week...",
+      "Almost done..."
+    ];
+    let msgIdx = 0;
+    const interval = setInterval(() => {
+      msgIdx = Math.min(msgIdx + 1, messages.length - 1);
+      setReplanMessage(messages[msgIdx]);
+    }, 1500);
+
+    try {
+      await onReplan("Replan My Week based on latest progress and deadlines");
+      setShowSuccessToast(true);
+      setTimeout(() => setShowSuccessToast(false), 4000);
+    } catch (err) {
+      console.error("Replan failed:", err);
+    } finally {
+      clearInterval(interval);
       setIsReplanning(false);
     }
   };
@@ -419,6 +439,65 @@ export default function ExecutionPlanScreen({
         </aside>
 
       </main>
+
+      {/* Replan Loading Modal */}
+      {isReplanning && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#1e293b]/85 backdrop-blur-sm transition-opacity duration-300">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white border-[3px] border-[#1e293b] shadow-clay-card rounded-[24px] p-8 max-w-sm w-full text-center flex flex-col items-center gap-6"
+          >
+            {/* Spinning Loader */}
+            <div className="relative w-16 h-16 flex items-center justify-center">
+              <div className="absolute inset-0 rounded-full border-4 border-[#1e293b]/10"></div>
+              <div className="absolute inset-0 rounded-full border-4 border-[#10b981] border-t-transparent animate-spin"></div>
+              <Sparkles className="w-6 h-6 text-[#10b981] animate-pulse" />
+            </div>
+            
+            <div className="space-y-2">
+              <h3 className="font-display text-lg font-black text-[#1e293b]">Replanning Your Week</h3>
+              <p className="text-sm text-slate-500 font-bold min-h-[20px] transition-all duration-350">
+                {replanMessage}
+              </p>
+            </div>
+
+            {/* Micro steps indicator */}
+            <div className="flex gap-1.5 justify-center w-full">
+              {["Reviewing progress", "Checking deadlines", "Redistributing work", "Optimizing week", "Almost done"].map((step, idx) => {
+                const messages = [
+                  "Reviewing your progress...",
+                  "Checking deadlines...",
+                  "Redistributing unfinished work...",
+                  "Optimizing your week...",
+                  "Almost done..."
+                ];
+                const activeIdx = messages.indexOf(replanMessage);
+                return (
+                  <div 
+                    key={step} 
+                    className={`h-2.5 rounded-full transition-all duration-300 ${
+                      idx <= activeIdx ? 'bg-[#10b981] w-8 border border-[#1e293b]' : 'bg-slate-200 w-2.5 border border-transparent'
+                    }`} 
+                  />
+                );
+              })}
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Success Toast */}
+      {showSuccessToast && (
+        <div className="fixed bottom-6 right-6 z-50 bg-[#ecfdf5] border-[3px] border-[#1e293b] shadow-[4px_4px_0px_#10b981] rounded-2xl py-4 px-6 flex items-center gap-3 animate-fade-in">
+          <div className="w-8 h-8 rounded-full bg-[#10b981] border border-[#1e293b] flex items-center justify-center text-white shrink-0 font-black shadow-sm">
+            ✓
+          </div>
+          <span className="text-sm text-[#1e293b] font-black">
+            ✨ Nova optimized your week based on your latest progress.
+          </span>
+        </div>
+      )}
     </div>
   );
 }
