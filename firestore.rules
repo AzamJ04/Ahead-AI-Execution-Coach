@@ -1,0 +1,149 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function ownsUserDoc(userId) {
+      return isSignedIn() && request.auth.uid == userId && isValidId(userId);
+    }
+
+    function ownsIncomingData() {
+      return isSignedIn() && incoming().userId == request.auth.uid;
+    }
+
+    function ownsExistingData() {
+      return isSignedIn() && existing().userId == request.auth.uid;
+    }
+
+    function isValidUserProfile(data) {
+      return data.keys().hasOnly([
+          'firstName', 'name', 'email', 'role', 'signedIn', 'isGuest',
+          'calendarConnected', 'latestBrainDump', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasAll(['firstName', 'signedIn'])
+        && data.firstName is string
+        && data.firstName.size() <= 100
+        && (!('name' in data) || (data.name is string && data.name.size() <= 100))
+        && (!('email' in data) || data.email == null || (data.email is string && data.email.size() <= 200))
+        && (!('role' in data) || data.role == null || data.role == 'student' || data.role == 'professional' || data.role == 'entrepreneur')
+        && data.signedIn is bool
+        && (!('isGuest' in data) || data.isGuest is bool)
+        && (!('calendarConnected' in data) || data.calendarConnected is bool)
+        && (!('latestBrainDump' in data) || (data.latestBrainDump is string && data.latestBrainDump.size() <= 10000))
+        && (!('createdAt' in data) || data.createdAt == request.time)
+        && (!('updatedAt' in data) || data.updatedAt == request.time);
+    }
+
+    function isValidTask(data) {
+      return data.keys().hasOnly([
+          'id', 'title', 'description', 'category', 'dueDate', 'deadline',
+          'priority', 'estimatedMinutes', 'estimatedHours', 'status',
+          'recurring', 'recurringPattern', 'scheduledTime', 'subtasks',
+          'progress', 'gcalEvent', 'userId', 'createdAt', 'updatedAt'
+        ])
+        && data.id is string && data.id.size() <= 128
+        && data.title is string && data.title.size() <= 200
+        && data.description is string && data.description.size() <= 2000
+        && data.category is string && data.category.size() <= 100
+        && data.dueDate is string && data.dueDate.size() <= 50
+        && (!('deadline' in data) || (data.deadline is string && data.deadline.size() <= 50))
+        && (data.priority == 'High' || data.priority == 'Medium' || data.priority == 'Low')
+        && (data.estimatedMinutes is int || data.estimatedMinutes is float)
+        && (!('estimatedHours' in data) || data.estimatedHours is int || data.estimatedHours is float)
+        && (!('status' in data) || data.status == 'Pending' || data.status == 'In Progress' || data.status == 'Completed')
+        && (!('recurring' in data) || data.recurring is bool)
+        && (!('recurringPattern' in data) || (data.recurringPattern is string && data.recurringPattern.size() <= 50))
+        && (!('scheduledTime' in data) || (data.scheduledTime is string && data.scheduledTime.size() <= 20))
+        && (data.progress is int || data.progress is float)
+        && data.userId == request.auth.uid
+        && (!('subtasks' in data) || data.subtasks is list)
+        && (!('gcalEvent' in data) || data.gcalEvent is bool);
+    }
+
+    function isValidTaskCreate(data) {
+      return ownsIncomingData()
+        && isValidTask(data)
+        && data.createdAt == request.time
+        && data.updatedAt == request.time;
+    }
+
+    function isValidTaskUpdate(data) {
+      return ownsIncomingData()
+        && ownsExistingData()
+        && isValidTask(data)
+        && data.createdAt == existing().createdAt
+        && data.updatedAt == request.time;
+    }
+
+    function isValidExecutionPlanBase(data) {
+      return data.keys().hasOnly([
+          'userId', 'days', 'sessions', 'dashboardData', 'novaNotification',
+          'lastGenerated', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasAll(['userId', 'days', 'dashboardData'])
+        && data.userId == request.auth.uid
+        && data.days is list
+        && (!('sessions' in data) || data.sessions is list)
+        && data.dashboardData is map
+        && (!('novaNotification' in data) || data.novaNotification is string);
+    }
+
+    function isValidExecutionPlanCreate(data, planId) {
+      return planId == request.auth.uid
+        && isValidExecutionPlanBase(data)
+        && data.createdAt == request.time
+        && data.updatedAt == request.time
+        && data.lastGenerated == request.time;
+    }
+
+    function isValidExecutionPlanUpdate(data, planId) {
+      return planId == request.auth.uid
+        && existing().userId == request.auth.uid
+        && isValidExecutionPlanBase(data)
+        && data.createdAt == existing().createdAt
+        && data.updatedAt == request.time
+        && data.lastGenerated == request.time;
+    }
+
+    match /users/{userId} {
+      allow get: if ownsUserDoc(userId);
+      allow create: if ownsUserDoc(userId) && isValidUserProfile(incoming());
+      allow update: if ownsUserDoc(userId) && isValidUserProfile(incoming());
+      allow delete: if ownsUserDoc(userId);
+    }
+
+    match /tasks/{taskId} {
+      allow get: if isSignedIn() && isValidId(taskId) && resource.data.userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(taskId) && isValidTaskCreate(incoming());
+      allow update: if isSignedIn() && isValidId(taskId) && isValidTaskUpdate(incoming());
+      allow delete: if isSignedIn() && isValidId(taskId) && resource.data.userId == request.auth.uid;
+    }
+
+    match /executionPlans/{planId} {
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(planId) && isValidExecutionPlanCreate(incoming(), planId);
+      allow update: if isSignedIn() && isValidId(planId) && isValidExecutionPlanUpdate(incoming(), planId);
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+  }
+}

@@ -1,0 +1,98 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile configuration and onboarding details",
+      "type": "object",
+      "properties": {
+        "firstName": {
+          "type": "string",
+          "description": "The user's first name"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["student", "professional", "entrepreneur"],
+          "description": "The role/category selected during onboarding"
+        },
+        "signedIn": {
+          "type": "boolean",
+          "description": "Whether the user is currently authenticated"
+        }
+      },
+      "required": ["firstName", "role"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "A user-authored task or project step",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique task ID"
+        },
+        "title": {
+          "type": "string",
+          "description": "Task title"
+        },
+        "description": {
+          "type": "string",
+          "description": "Task description details"
+        },
+        "category": {
+          "type": "string",
+          "description": "Category group e.g. Academics, Work"
+        },
+        "dueDate": {
+          "type": "string",
+          "description": "Due date or days remaining"
+        },
+        "priority": {
+          "type": "string",
+          "enum": ["High", "Medium", "Low"],
+          "description": "Priority tier of the task"
+        },
+        "estimatedMinutes": {
+          "type": "integer",
+          "description": "Estimated time to complete"
+        },
+        "progress": {
+          "type": "number",
+          "description": "Progress percentage of subtasks completed"
+        },
+        "gcalEvent": {
+          "type": "boolean",
+          "description": "Whether the task has been added to Google Calendar"
+        },
+        "subtasks": {
+          "type": "array",
+          "description": "List of subtask items"
+        },
+        "userId": {
+          "type": "string",
+          "description": "UID of the owner"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the task was created"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the task was last updated"
+        }
+      },
+      "required": ["id", "title", "userId", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Root collection for user profiles"
+    },
+    "/users/{userId}/tasks/{taskId}": {
+      "schema": "Task",
+      "description": "Tasks subcollection nested under each user"
+    }
+  }
+}

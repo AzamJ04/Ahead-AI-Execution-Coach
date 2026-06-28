@@ -1,0 +1,6 @@
+{
+  "name": "Ahead",
+  "description": "Ahead is an AI execution coach that organizes your work week, tracks deadlines, and provides structured focus sessions.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

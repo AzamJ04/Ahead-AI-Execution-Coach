@@ -1,0 +1,95 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Plus Jakarta Sans", var(--font-sans);
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --color-outline: #1e293b;
+  --color-on-background: #1e293b;
+  --color-muted-text: #64748b;
+  --color-error: #ef4444;
+  --color-surface: #ffffff;
+  --color-on-primary: #ffffff;
+  --color-background: #FFFBF4;
+  --color-primary: #10b981;
+  --color-secondary: #bfdbfe;
+  --color-on-surface: #1e293b;
+  --color-border-subtle: #e2e8f0;
+  --color-surface-white: #ffffff;
+}
+
+@utility glass-card {
+  background-color: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+@utility glass-card-premium {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.01) 100%);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+@utility glass-card-hover {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  &:hover {
+    border-color: #1e293b;
+    background-color: rgba(255, 255, 255, 0.9);
+    box-shadow: 6px 6px 0px #1e293b;
+    transform: translateY(-2px);
+  }
+}
+
+@utility bg-immersive-gradient {
+  background-color: #FFFBF4;
+}
+
+@utility text-gradient-glow {
+  background: linear-gradient(135deg, #1e293b 30%, #10b981 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+@utility shadow-clay-card {
+  box-shadow: inset -4px -4px 8px rgba(0, 0, 0, 0.05), inset 4px 4px 8px rgba(255, 255, 255, 0.8), 5px 5px 0px #1e293b;
+}
+
+@utility shadow-clay-btn {
+  box-shadow: inset -3px -3px 6px rgba(0, 0, 0, 0.08), inset 3px 3px 6px rgba(255, 255, 255, 0.8), 4px 4px 0px #1e293b;
+}
+
+@utility shadow-clay-btn-active {
+  box-shadow: inset -2px -2px 4px rgba(0, 0, 0, 0.12), inset 2px 2px 4px rgba(255, 255, 255, 0.8), 1px 1px 0px #1e293b;
+}
+
+@utility shadow-clay-badge {
+  box-shadow: inset -2px -2px 4px rgba(0, 0, 0, 0.06), inset 2px 2px 4px rgba(255, 255, 255, 0.8), 2px 2px 0px #1e293b;
+}
+
+@layer base {
+  body {
+    @apply bg-background text-[#1e293b] font-sans antialiased;
+    background-color: #FFFBF4;
+    background-attachment: fixed;
+    color: #1e293b;
+  }
+  
+  /* Sleek custom scrollbars */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.02);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(30, 41, 59, 0.2);
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(30, 41, 59, 0.4);
+  }
+}
