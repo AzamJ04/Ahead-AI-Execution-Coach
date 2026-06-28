@@ -1,12 +1,9 @@
 {
-
-  "firestoreDatabaseId": "(default)",
- 
-  "apiKey": "AIzaSyAlawdovwULkAjLovi6zwbDuDJ2g1jO_Kw",
-  "authDomain": "aheadcodex.firebaseapp.com",
-  "projectId": "aheadcodex",
-  "storageBucket": "aheadcodex.firebasestorage.app",
-  "messagingSenderId": "750582905051",
-  "appId": "1:750582905051:web:e3ae122047b19f849234fe",
-  "measurementId": "G-N1RBK9CBJR"
+  "firestoreDatabaseId": "ai-studio-ahead-5ab18cd7-c407-46fa-b23f-58f33fb532a2",
+  "apiKey": "AIzaSyCKcNnbbyD3clBPcLAa5VQCZdhzXlJGHII",
+  "authDomain": "ahead-3b1ea.firebaseapp.com",
+  "projectId": "ahead-3b1ea",
+  "storageBucket": "ahead-3b1ea.firebasestorage.app",
+  "messagingSenderId": "492715953654",
+  "appId": "1:492715953654:web:736f7925a65db0a4b48bd7"
 }
