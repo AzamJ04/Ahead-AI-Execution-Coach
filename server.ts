@@ -2,6 +2,7 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
+import fs from "fs";
 
 // Load local overrides first, then standard environment variables
 dotenv.config({ path: path.resolve(process.cwd(), ".env.local") });
@@ -907,8 +908,32 @@ Answer as Nova, an intelligent executive assistant inside Focus Mode. Be concise
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
-    app.get("*", (req: express.Request, res: express.Response) => {
-      res.sendFile(path.join(distPath, "index.html"));
+    app.get("*", async (req: express.Request, res: express.Response) => {
+      try {
+        const indexPath = path.join(distPath, "index.html");
+        let html = await fs.promises.readFile(indexPath, "utf8");
+        
+        // Inject Firebase config dynamically into the html at runtime
+        const configScript = `
+  <script>
+    window.FIREBASE_CONFIG = {
+      apiKey: "${(process.env.VITE_FIREBASE_API_KEY || '').trim()}",
+      authDomain: "${(process.env.VITE_FIREBASE_AUTH_DOMAIN || '').trim()}",
+      projectId: "${(process.env.VITE_FIREBASE_PROJECT_ID || '').trim()}",
+      storageBucket: "${(process.env.VITE_FIREBASE_STORAGE_BUCKET || '').trim()}",
+      messagingSenderId: "${(process.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '').trim()}",
+      appId: "${(process.env.VITE_FIREBASE_APP_ID || '').trim()}",
+      measurementId: "${(process.env.VITE_FIREBASE_MEASUREMENT_ID || '').trim()}",
+      firestoreDatabaseId: "${(process.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID || '(default)').trim()}"
+    };
+  </script>
+`;
+        html = html.replace("<head>", `<head>${configScript}`);
+        res.send(html);
+      } catch (err) {
+        console.error("Failed to inject runtime config, serving static index.html directly:", err);
+        res.sendFile(path.join(distPath, "index.html"));
+      }
     });
   }
 

@@ -20,15 +20,16 @@ import {
   writeBatch as realWriteBatch,
   getDocFromServer
 } from 'firebase/firestore';
-const firebaseConfig = {
-  apiKey: (import.meta.env.VITE_FIREBASE_API_KEY || '').trim(),
-  authDomain: (import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '').trim(),
-  projectId: (import.meta.env.VITE_FIREBASE_PROJECT_ID || '').trim(),
-  storageBucket: (import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '').trim(),
-  messagingSenderId: (import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '').trim(),
-  appId: (import.meta.env.VITE_FIREBASE_APP_ID || '').trim(),
-  measurementId: (import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || '').trim(),
-  firestoreDatabaseId: (import.meta.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID || '(default)').trim()
+const win = typeof window !== 'undefined' ? (window as any) : {};
+const firebaseConfig = win.FIREBASE_CONFIG || {
+  apiKey: ((import.meta as any).env?.VITE_FIREBASE_API_KEY || '').trim(),
+  authDomain: ((import.meta as any).env?.VITE_FIREBASE_AUTH_DOMAIN || '').trim(),
+  projectId: ((import.meta as any).env?.VITE_FIREBASE_PROJECT_ID || '').trim(),
+  storageBucket: ((import.meta as any).env?.VITE_FIREBASE_STORAGE_BUCKET || '').trim(),
+  messagingSenderId: ((import.meta as any).env?.VITE_FIREBASE_MESSAGING_SENDER_ID || '').trim(),
+  appId: ((import.meta as any).env?.VITE_FIREBASE_APP_ID || '').trim(),
+  measurementId: ((import.meta as any).env?.VITE_FIREBASE_MEASUREMENT_ID || '').trim(),
+  firestoreDatabaseId: ((import.meta as any).env?.VITE_FIREBASE_FIRESTORE_DATABASE_ID || '(default)').trim()
 };
 
 // Detect invalid/placeholder API key on startup
