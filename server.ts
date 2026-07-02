@@ -1,12 +1,67 @@
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 
-dotenv.config();
+// Load local overrides first, then standard environment variables
+dotenv.config({ path: path.resolve(process.cwd(), ".env.local") });
+dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
 let useLocalFallbackOnly = false;
+
+// Helper to clean markdown json blocks from AI response
+function cleanJsonResponse(text: string): string {
+  let cleaned = text.trim();
+  if (cleaned.startsWith("```json")) {
+    cleaned = cleaned.slice(7);
+  } else if (cleaned.startsWith("```")) {
+    cleaned = cleaned.slice(3);
+  }
+  if (cleaned.endsWith("```")) {
+    cleaned = cleaned.slice(0, -3);
+  }
+  return cleaned.trim();
+}
+
+// Helper to request completions from OpenRouter using the requested model
+async function callOpenRouter(systemInstruction: string, prompt: string, jsonMode: boolean = false): Promise<string> {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
+    throw new Error("OPENROUTER_API_KEY is not defined");
+  }
+
+  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+      "HTTP-Referer": process.env.APP_URL || "http://localhost:3000",
+      "X-Title": "Ahead",
+    },
+    body: JSON.stringify({
+      model: "poolside/laguna-xs-2.1:free",
+      messages: [
+        { role: "system", content: systemInstruction },
+        { role: "user", content: prompt }
+      ],
+      response_format: jsonMode ? { type: "json_object" } : undefined
+    })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`OpenRouter API error: ${response.status} ${response.statusText} - ${errorText}`);
+  }
+
+  const data = await response.json() as any;
+  const choice = data.choices?.[0];
+  if (!choice || !choice.message?.content) {
+    throw new Error("Invalid response format from OpenRouter");
+  }
+
+  return choice.message.content;
+}
+
 
 // High-fidelity fallback scheduling system that dynamically mimics our AI scheduling behavior locally
 function generateSmartFallbackSystem(brainDump: string, userRole: string | null) {
@@ -287,15 +342,7 @@ async function startServer() {
 
   app.use(express.json());
 
-  // Initialize Gemini Client
-  const ai = new GoogleGenAI({
-    apiKey: process.env.GEMINI_API_KEY,
-    httpOptions: {
-      headers: {
-        'User-Agent': 'aistudio-build',
-      }
-    }
-  });
+  // OpenRouter Client is used via callOpenRouter helper.
 
   // Unified endpoint to parse brain dump and generate complete productivity system
   app.post("/api/plan", async (req: express.Request, res: express.Response) => {
@@ -306,8 +353,8 @@ async function startServer() {
       }
 
       // Check if API Key is missing or local fallback is active
-      if (!process.env.GEMINI_API_KEY || useLocalFallbackOnly) {
-        console.warn("GEMINI_API_KEY is not defined or local fallback active, generating smart local fallback productivity system...");
+      if (!process.env.OPENROUTER_API_KEY || useLocalFallbackOnly) {
+        console.warn("OPENROUTER_API_KEY is not defined or local fallback active, generating smart local fallback productivity system...");
         const fallbackSystem = generateSmartFallbackSystem(brainDump, userRole);
         return res.json({ ...fallbackSystem, apiKeyMissing: true });
       }
@@ -338,135 +385,77 @@ Follow these instructions precisely:
 10. For each task, generate a dynamic, friendly, expert executive coaching recommendation inside the task's \`novaRecommendation\` field (e.g. 'Finish Arrays and Time Complexity first. Completing this today keeps you on track for Tuesday's quiz.'). It should feel like a personal coach giving actionable advice, not a system notification.
 11. Absolutely avoid short 10-20 minute sessions for tasks. Ensure gym/workout is at least 60 minutes and assignments or study blocks are at least 45 minutes.
 
-Format the output strictly according to the specified JSON schema. Do not include any text outside the JSON.`;
+Format the output strictly as a JSON object matching this TypeScript interface (do not include any conversational text or explanation outside the JSON):
+interface PlanResponse {
+  tasks: Array<{
+    title: string;
+    description: string;
+    category: string;
+    dueDate: string;
+    deadline?: string;
+    priority: string;
+    estimatedMinutes: number;
+    estimatedHours: number;
+    status: string;
+    recurring?: boolean;
+    recurringPattern?: string;
+    scheduledTime?: string;
+    novaRecommendation: string;
+    subtasks: Array<{
+      title: string;
+      estimatedMinutes: number;
+    }>;
+  }>;
+  executionPlan: {
+    days: Array<{
+      dayName: string;
+      sessions: Array<{
+        taskTitle: string;
+        subtask: string;
+        date: string;
+        startTime: string;
+        endTime: string;
+        timeSlot: string;
+        duration: number;
+        estimatedMinutes: number;
+        status: string;
+        source: string;
+      }>;
+    }>;
+    dashboardData: {
+      todaysMission: string;
+      novaRecommendation: string;
+      highestRiskTask: string;
+      upcomingDeadlines: Array<{
+        title: string;
+        category: string;
+        dueDate: string;
+        priority: string;
+      }>;
+      todaysTimeline: Array<{
+        time: string;
+        title: string;
+        subtitle: string;
+        category: string;
+      }>;
+    };
+  };
+}`;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: prompt,
-        config: {
-          systemInstruction: "You are Nova, an expert personal productivity assistant and executive coach. Your goal is to parse messy user brain dumps, organize them into clear actionable tasks with automated detailed subtasks, distribute their sessions realistically over a multi-day timeline, and output a complete productivity system.",
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              tasks: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    title: { type: Type.STRING },
-                    description: { type: Type.STRING },
-                    category: { type: Type.STRING },
-                    dueDate: { type: Type.STRING },
-                    deadline: { type: Type.STRING },
-                    priority: { type: Type.STRING },
-                    estimatedMinutes: { type: Type.INTEGER },
-                    estimatedHours: { type: Type.NUMBER },
-                    status: { type: Type.STRING },
-                    recurring: { type: Type.BOOLEAN },
-                    recurringPattern: { type: Type.STRING },
-                    scheduledTime: { type: Type.STRING },
-                    novaRecommendation: { type: Type.STRING },
-                    subtasks: {
-                      type: Type.ARRAY,
-                      items: {
-                        type: Type.OBJECT,
-                        properties: {
-                          title: { type: Type.STRING },
-                          estimatedMinutes: { type: Type.INTEGER }
-                        },
-                        required: ["title"]
-                      }
-                    }
-                  },
-                  required: ["title", "description", "category", "dueDate", "priority", "estimatedMinutes", "novaRecommendation", "subtasks"]
-                }
-              },
-              executionPlan: {
-                type: Type.OBJECT,
-                properties: {
-                  days: {
-                    type: Type.ARRAY,
-                    items: {
-                      type: Type.OBJECT,
-                      properties: {
-                        dayName: { type: Type.STRING },
-                        sessions: {
-                          type: Type.ARRAY,
-                          items: {
-                            type: Type.OBJECT,
-                            properties: {
-                              taskTitle: { type: Type.STRING },
-                              subtask: { type: Type.STRING },
-                              date: { type: Type.STRING },
-                              startTime: { type: Type.STRING },
-                              endTime: { type: Type.STRING },
-                              timeSlot: { type: Type.STRING },
-                              duration: { type: Type.INTEGER },
-                              estimatedMinutes: { type: Type.INTEGER },
-                              status: { type: Type.STRING },
-                              source: { type: Type.STRING }
-                            },
-                            required: ["taskTitle", "timeSlot", "estimatedMinutes"]
-                          }
-                        }
-                      },
-                      required: ["dayName", "sessions"]
-                    }
-                  },
-                  dashboardData: {
-                    type: Type.OBJECT,
-                    properties: {
-                      todaysMission: { type: Type.STRING },
-                      novaRecommendation: { type: Type.STRING },
-                      highestRiskTask: { type: Type.STRING },
-                      upcomingDeadlines: {
-                        type: Type.ARRAY,
-                        items: {
-                          type: Type.OBJECT,
-                          properties: {
-                            title: { type: Type.STRING },
-                            category: { type: Type.STRING },
-                            dueDate: { type: Type.STRING },
-                            priority: { type: Type.STRING }
-                          },
-                          required: ["title", "category", "dueDate", "priority"]
-                        }
-                      },
-                      todaysTimeline: {
-                        type: Type.ARRAY,
-                        items: {
-                          type: Type.OBJECT,
-                          properties: {
-                            time: { type: Type.STRING },
-                            title: { type: Type.STRING },
-                            subtitle: { type: Type.STRING },
-                            category: { type: Type.STRING }
-                          },
-                          required: ["time", "title", "subtitle", "category"]
-                        }
-                      }
-                    },
-                    required: ["todaysMission", "novaRecommendation", "highestRiskTask", "upcomingDeadlines", "todaysTimeline"]
-                  }
-                },
-                required: ["days", "dashboardData"]
-              }
-            },
-            required: ["tasks", "executionPlan"]
-          }
-        }
-      });
+      const responseText = await callOpenRouter(
+        "You are Nova, an expert personal productivity assistant and executive coach. Your goal is to parse messy user brain dumps, organize them into clear actionable tasks with automated detailed subtasks, distribute their sessions realistically over a multi-day timeline, and output a complete productivity system.",
+        prompt,
+        true
+      );
 
-      const responseText = response.text;
       if (!responseText) {
-        throw new Error("No response text from Gemini");
+        throw new Error("No response text from OpenRouter");
       }
 
-      const systemData = JSON.parse(responseText.trim());
+      const systemData = JSON.parse(cleanJsonResponse(responseText));
       res.json({ ...systemData, apiKeyMissing: false });
     } catch (error: any) {
-      console.error("Gemini Unified Plan Error, falling back to smart local scheduler:", error);
+      console.error("OpenRouter Unified Plan Error, falling back to smart local scheduler:", error);
       useLocalFallbackOnly = true;
       try {
         const fallbackSystem = generateSmartFallbackSystem(req.body.brainDump || "", req.body.userRole || null);
@@ -482,9 +471,9 @@ Format the output strictly according to the specified JSON schema. Do not includ
     try {
       const { tasks, currentPlan, reason, userRole } = req.body;
 
-      if (!process.env.GEMINI_API_KEY || useLocalFallbackOnly) {
+      if (!process.env.OPENROUTER_API_KEY || useLocalFallbackOnly) {
         // High fidelity mock replanning message and rescheduling when local/fallback
-        console.warn("GEMINI_API_KEY is not defined or local fallback active, using mock replanning engine...");
+        console.warn("OPENROUTER_API_KEY is not defined or local fallback active, using mock replanning engine...");
         const lowerReason = (reason || "").toLowerCase();
 
         if (lowerReason.includes("deleted") || lowerReason.includes("removing") || lowerReason.includes("removed")) {
@@ -563,97 +552,55 @@ Please recalculate and update their Execution Plan intelligently following these
 9. Keep task details unchanged: never modify the user's original task descriptions or titles. Only adjust the scheduling, ordering, time allocation, and recommendations.
 10. Preserve all task IDs (taskId) in the sessions so they remain linked to the tasks correctly.
 11. Write a warm, encouraging executive-function coach notification explaining exactly what was shifted, prioritized, or optimized and why.
-12. Ensure the execution plan starts from today (${currentDayName}) and covers the next 4 upcoming days, shifting all sessions and dayNames to match.`;
+12. Ensure the execution plan starts from today (${currentDayName}) and covers the next 4 upcoming days, shifting all sessions and dayNames to match.
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: prompt,
-        config: {
-          systemInstruction: "You are Nova, Ahead's AI execution coach. Your job is to automatically replan the user's schedule when they fall behind, skip sessions, or request a replan, keeping them comfortable and focused on finishing before their deadlines.",
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              executionPlan: {
-                type: Type.OBJECT,
-                properties: {
-                  days: {
-                    type: Type.ARRAY,
-                    items: {
-                      type: Type.OBJECT,
-                      properties: {
-                        dayName: { type: Type.STRING },
-                        sessions: {
-                          type: Type.ARRAY,
-                          items: {
-                            type: Type.OBJECT,
-                            properties: {
-                              taskTitle: { type: Type.STRING },
-                              taskId: { type: Type.STRING },
-                              timeSlot: { type: Type.STRING },
-                              estimatedMinutes: { type: Type.INTEGER }
-                            },
-                            required: ["taskTitle", "taskId", "timeSlot", "estimatedMinutes"]
-                          }
-                        }
-                      },
-                      required: ["dayName", "sessions"]
-                    }
-                  },
-                  dashboardData: {
-                    type: Type.OBJECT,
-                    properties: {
-                      todaysMission: { type: Type.STRING },
-                      novaRecommendation: { type: Type.STRING },
-                      highestRiskTask: { type: Type.STRING },
-                      upcomingDeadlines: {
-                        type: Type.ARRAY,
-                        items: {
-                          type: Type.OBJECT,
-                          properties: {
-                            title: { type: Type.STRING },
-                            category: { type: Type.STRING },
-                            dueDate: { type: Type.STRING },
-                            priority: { type: Type.STRING }
-                          },
-                          required: ["title", "category", "dueDate", "priority"]
-                        }
-                      },
-                      todaysTimeline: {
-                        type: Type.ARRAY,
-                        items: {
-                          type: Type.OBJECT,
-                          properties: {
-                            time: { type: Type.STRING },
-                            title: { type: Type.STRING },
-                            subtitle: { type: Type.STRING },
-                            category: { type: Type.STRING }
-                          },
-                          required: ["time", "title", "subtitle", "category"]
-                        }
-                      }
-                    },
-                    required: ["todaysMission", "novaRecommendation", "highestRiskTask", "upcomingDeadlines", "todaysTimeline"]
-                  },
-                  novaNotification: { type: Type.STRING }
-                },
-                required: ["days", "dashboardData", "novaNotification"]
-              }
-            },
-            required: ["executionPlan"]
-          }
-        }
-      });
+Format the output strictly as a JSON object matching this TypeScript interface (do not include any conversational text or explanation outside the JSON):
+interface ReplanResponse {
+  executionPlan: {
+    days: Array<{
+      dayName: string;
+      sessions: Array<{
+        taskTitle: string;
+        taskId: string;
+        timeSlot: string;
+        estimatedMinutes: number;
+      }>;
+    }>;
+    dashboardData: {
+      todaysMission: string;
+      novaRecommendation: string;
+      highestRiskTask: string;
+      upcomingDeadlines: Array<{
+        title: string;
+        category: string;
+        dueDate: string;
+        priority: string;
+      }>;
+      todaysTimeline: Array<{
+        time: string;
+        title: string;
+        subtitle: string;
+        category: string;
+      }>;
+    };
+    novaNotification: string;
+  };
+}`;
 
-      const responseText = response.text;
+      const responseText = await callOpenRouter(
+        "You are Nova, Ahead's AI execution coach. Your job is to automatically replan the user's schedule when they fall behind, skip sessions, or request a replan, keeping them comfortable and focused on finishing before their deadlines.",
+        prompt,
+        true
+      );
+
       if (!responseText) {
-        throw new Error("No response text from Gemini");
+        throw new Error("No response text from OpenRouter");
       }
 
-      const replannedData = JSON.parse(responseText.trim());
+      const replannedData = JSON.parse(cleanJsonResponse(responseText));
       res.json({ ...replannedData, apiKeyMissing: false });
     } catch (error: any) {
-      console.error("Replan Error, falling back:", error);
+      console.error("OpenRouter Replan Error, falling back:", error);
       useLocalFallbackOnly = true;
       try {
         const lowerReason = (req.body.reason || "").toLowerCase();
@@ -790,7 +737,7 @@ Please recalculate and update their Execution Plan intelligently following these
         novaNotification: `I added "${fallbackTask.title}" and updated your execution plan.`
       } : null;
 
-      if (!process.env.GEMINI_API_KEY || useLocalFallbackOnly) {
+      if (!process.env.OPENROUTER_API_KEY || useLocalFallbackOnly) {
         return res.json({ task: fallbackTask, executionPlan: fallbackPlan, apiKeyMissing: true });
       }
 
@@ -811,117 +758,64 @@ Act as Nova, an AI execution coach. Convert the new task into a complete task ob
 Ensure that the task, its subtasks, and the scheduled sessions in the execution plan have realistic, non-trivial durations:
 - Physical habits/workouts (gym, exercise) MUST be allocated at least 60 minutes.
 - Focus sessions for academic assignments, exam study, interview prep, or work projects MUST be at least 45 minutes long.
-- Do not schedule short 10-20 minute blocks for tasks that require real focus or physical preparation.`;
+- Do not schedule short 10-20 minute blocks for tasks that require real focus or physical preparation.
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: prompt,
-        config: {
-          systemInstruction: "You are Nova, an AI execution coach. Return only JSON. Create practical subtasks and update the execution plan to help the user finish before deadlines.",
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              task: {
-                type: Type.OBJECT,
-                properties: {
-                  title: { type: Type.STRING },
-                  description: { type: Type.STRING },
-                  category: { type: Type.STRING },
-                  dueDate: { type: Type.STRING },
-                  priority: { type: Type.STRING },
-                  estimatedMinutes: { type: Type.INTEGER },
-                  novaRecommendation: { type: Type.STRING },
-                  subtasks: {
-                    type: Type.ARRAY,
-                    items: {
-                      type: Type.OBJECT,
-                      properties: {
-                        title: { type: Type.STRING }
-                      },
-                      required: ["title"]
-                    }
-                  }
-                },
-                required: ["title", "description", "category", "dueDate", "priority", "estimatedMinutes", "novaRecommendation", "subtasks"]
-              },
-              executionPlan: {
-                type: Type.OBJECT,
-                properties: {
-                  days: {
-                    type: Type.ARRAY,
-                    items: {
-                      type: Type.OBJECT,
-                      properties: {
-                        dayName: { type: Type.STRING },
-                        sessions: {
-                          type: Type.ARRAY,
-                          items: {
-                            type: Type.OBJECT,
-                            properties: {
-                              taskTitle: { type: Type.STRING },
-                              timeSlot: { type: Type.STRING },
-                              estimatedMinutes: { type: Type.INTEGER },
-                              completed: { type: Type.BOOLEAN }
-                            },
-                            required: ["taskTitle", "timeSlot", "estimatedMinutes"]
-                          }
-                        }
-                      },
-                      required: ["dayName", "sessions"]
-                    }
-                  },
-                  dashboardData: {
-                    type: Type.OBJECT,
-                    properties: {
-                      todaysMission: { type: Type.STRING },
-                      novaRecommendation: { type: Type.STRING },
-                      highestRiskTask: { type: Type.STRING },
-                      upcomingDeadlines: {
-                        type: Type.ARRAY,
-                        items: {
-                          type: Type.OBJECT,
-                          properties: {
-                            title: { type: Type.STRING },
-                            category: { type: Type.STRING },
-                            dueDate: { type: Type.STRING },
-                            priority: { type: Type.STRING }
-                          },
-                          required: ["title", "category", "dueDate", "priority"]
-                        }
-                      },
-                      todaysTimeline: {
-                        type: Type.ARRAY,
-                        items: {
-                          type: Type.OBJECT,
-                          properties: {
-                            time: { type: Type.STRING },
-                            title: { type: Type.STRING },
-                            subtitle: { type: Type.STRING },
-                            category: { type: Type.STRING }
-                          },
-                          required: ["time", "title", "subtitle", "category"]
-                        }
-                      }
-                    },
-                    required: ["todaysMission", "novaRecommendation", "highestRiskTask", "upcomingDeadlines", "todaysTimeline"]
-                  },
-                  novaNotification: { type: Type.STRING }
-                },
-                required: ["days", "dashboardData"]
-              }
-            },
-            required: ["task"]
-          }
-        }
-      });
+Format the output strictly as a JSON object matching this TypeScript interface (do not include any conversational text or explanation outside the JSON):
+interface AddTaskResponse {
+  task: {
+    title: string;
+    description: string;
+    category: string;
+    dueDate: string;
+    priority: string;
+    estimatedMinutes: number;
+    novaRecommendation: string;
+    subtasks: Array<{
+      title: string;
+    }>;
+  };
+  executionPlan?: {
+    days: Array<{
+      dayName: string;
+      sessions: Array<{
+        taskTitle: string;
+        timeSlot: string;
+        estimatedMinutes: number;
+        completed: boolean;
+      }>;
+    }>;
+    dashboardData: {
+      todaysMission: string;
+      novaRecommendation: string;
+      highestRiskTask: string;
+      upcomingDeadlines: Array<{
+        title: string;
+        category: string;
+        dueDate: string;
+        priority: string;
+      }>;
+      todaysTimeline: Array<{
+        time: string;
+        title: string;
+        subtitle: string;
+        category: string;
+      }>;
+    };
+    novaNotification?: string;
+  };
+}`;
 
-      const responseText = response.text;
+      const responseText = await callOpenRouter(
+        "You are Nova, an AI execution coach. Return only JSON. Create practical subtasks and update the execution plan to help the user finish before deadlines.",
+        prompt,
+        true
+      );
+
       if (!responseText) {
-        throw new Error("No response text from Gemini");
+        throw new Error("No response text from OpenRouter");
       }
 
-      const result = JSON.parse(responseText.trim());
+      const result = JSON.parse(cleanJsonResponse(responseText));
       const taskId = Math.random().toString(36).substring(2, 11);
       const task = {
         ...result.task,
@@ -965,7 +859,7 @@ Ensure that the task, its subtasks, and the scheduled sessions in the execution 
         return res.status(400).json({ error: "message is required" });
       }
 
-      if (!process.env.GEMINI_API_KEY || useLocalFallbackOnly) {
+      if (!process.env.OPENROUTER_API_KEY || useLocalFallbackOnly) {
         return res.json({
           reply: `For "${currentSubtask || task?.title || "this step"}", start by naming the exact output you need, then work in one small block before checking anything else. Based on your notes, keep the answer practical and tied to the current task.`,
           apiKeyMissing: true
@@ -985,17 +879,15 @@ Current context:
 
 Answer as Nova, an intelligent executive assistant inside Focus Mode. Be concise, useful, and context-aware. Help the user complete the current step without sending them away from the page.`;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: prompt,
-        config: {
-          systemInstruction: "You are Nova, Ahead's AI execution coach. You are not a generic chatbot. You know the user's current work context and help them finish the active task.",
-        }
-      });
+      const responseText = await callOpenRouter(
+        "You are Nova, Ahead's AI execution coach. You are not a generic chatbot. You know the user's current work context and help them finish the active task.",
+        prompt,
+        false
+      );
 
-      res.json({ reply: response.text || "Stay with the current step and complete the smallest useful next action.", apiKeyMissing: false });
+      res.json({ reply: responseText || "Stay with the current step and complete the smallest useful next action.", apiKeyMissing: false });
     } catch (error: any) {
-      console.error("Nova Chat Error, falling back:", error);
+      console.error("OpenRouter Nova Chat Error, falling back:", error);
       useLocalFallbackOnly = true;
       res.json({
         reply: `For "${req.body.currentSubtask || req.body.task?.title || "this step"}", start by naming the exact output you need, then work in one small block before checking anything else. Based on your notes, keep the answer practical and tied to the current task.`,

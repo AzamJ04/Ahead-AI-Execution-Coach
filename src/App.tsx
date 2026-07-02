@@ -888,7 +888,7 @@ export default function App() {
             ...task,
             id: taskId,
             userId,
-            createdAt: oldTask?.createdAt || task.createdAt || new Date().toISOString(),
+            createdAt: (oldTask as any)?.createdAt || (task as any).createdAt || new Date().toISOString(),
           });
           batch.set(taskRef, { ...taskPayload, updatedAt: serverTimestamp() }, { merge: true });
         });

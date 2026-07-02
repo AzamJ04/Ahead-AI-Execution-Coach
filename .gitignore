@@ -1,10 +1,12 @@
 node_modules/
+.node_local/
+
 build/
 dist/
 coverage/
-.DS_Store
-*.log
+
 .env*
 !.env.example
-.env.local
-.node_local/
+
+*.log
+.DS_Store

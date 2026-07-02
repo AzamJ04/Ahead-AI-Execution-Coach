@@ -49,18 +49,18 @@ else
     echo "📦 Repository '$REPOSITORY_NAME' already exists."
 fi
 
-# 6. Extract GEMINI_API_KEY from .env/env.local if available
-GEMINI_API_KEY=""
+# 6. Extract OPENROUTER_API_KEY from .env/env.local if available
+OPENROUTER_API_KEY=""
 if [ -f .env.local ]; then
-    GEMINI_API_KEY=$(grep -E "^GEMINI_API_KEY=" .env.local | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+    OPENROUTER_API_KEY=$(grep -E "^OPENROUTER_API_KEY=" .env.local | cut -d'=' -f2- | tr -d '"' | tr -d "'")
 elif [ -f .env ]; then
-    GEMINI_API_KEY=$(grep -E "^GEMINI_API_KEY=" .env | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+    OPENROUTER_API_KEY=$(grep -E "^OPENROUTER_API_KEY=" .env | cut -d'=' -f2- | tr -d '"' | tr -d "'")
 fi
 
-if [ -n "$GEMINI_API_KEY" ]; then
-    echo "🔑 Found GEMINI_API_KEY in local environment files."
+if [ -n "$OPENROUTER_API_KEY" ]; then
+    echo "🔑 Found OPENROUTER_API_KEY in local environment files."
 else
-    echo "⚠️  Warning: GEMINI_API_KEY not found in .env or .env.local."
+    echo "⚠️  Warning: OPENROUTER_API_KEY not found in .env or .env.local."
 fi
 
 # 7. Build and push image using Cloud Build
@@ -70,13 +70,13 @@ gcloud builds submit --tag "$IMAGE_TAG"
 
 # 8. Deploy to Cloud Run
 echo "⚡ Deploying to Google Cloud Run..."
-if [ -n "$GEMINI_API_KEY" ]; then
+if [ -n "$OPENROUTER_API_KEY" ]; then
     gcloud run deploy "$SERVICE_NAME" \
         --image "$IMAGE_TAG" \
         --platform managed \
         --region "$REGION" \
         --allow-unauthenticated \
-        --set-env-vars "NODE_ENV=production,PORT=8080,GEMINI_API_KEY=${GEMINI_API_KEY}"
+        --set-env-vars "NODE_ENV=production,PORT=8080,OPENROUTER_API_KEY=${OPENROUTER_API_KEY}"
 else
     gcloud run deploy "$SERVICE_NAME" \
         --image "$IMAGE_TAG" \
