@@ -11,4 +11,4 @@ coverage/
 *.log
 .DS_Store
 
-firebase-applet-config.json
+.firebase/
