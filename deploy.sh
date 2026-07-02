@@ -63,6 +63,43 @@ else
     echo "⚠️  Warning: OPENROUTER_API_KEY not found in .env or .env.local."
 fi
 
+# Extract Firebase variables
+VITE_FIREBASE_API_KEY=""
+VITE_FIREBASE_AUTH_DOMAIN=""
+VITE_FIREBASE_PROJECT_ID=""
+VITE_FIREBASE_STORAGE_BUCKET=""
+VITE_FIREBASE_MESSAGING_SENDER_ID=""
+VITE_FIREBASE_APP_ID=""
+VITE_FIREBASE_MEASUREMENT_ID=""
+VITE_FIREBASE_FIRESTORE_DATABASE_ID=""
+
+if [ -f .env.local ]; then
+    VITE_FIREBASE_API_KEY=$(grep -E "^VITE_FIREBASE_API_KEY=" .env.local | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+    VITE_FIREBASE_AUTH_DOMAIN=$(grep -E "^VITE_FIREBASE_AUTH_DOMAIN=" .env.local | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+    VITE_FIREBASE_PROJECT_ID=$(grep -E "^VITE_FIREBASE_PROJECT_ID=" .env.local | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+    VITE_FIREBASE_STORAGE_BUCKET=$(grep -E "^VITE_FIREBASE_STORAGE_BUCKET=" .env.local | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+    VITE_FIREBASE_MESSAGING_SENDER_ID=$(grep -E "^VITE_FIREBASE_MESSAGING_SENDER_ID=" .env.local | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+    VITE_FIREBASE_APP_ID=$(grep -E "^VITE_FIREBASE_APP_ID=" .env.local | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+    VITE_FIREBASE_MEASUREMENT_ID=$(grep -E "^VITE_FIREBASE_MEASUREMENT_ID=" .env.local | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+    VITE_FIREBASE_FIRESTORE_DATABASE_ID=$(grep -E "^VITE_FIREBASE_FIRESTORE_DATABASE_ID=" .env.local | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+fi
+
+# Create a temporary .env.production file for the Docker build context
+echo "📝 Creating temporary .env.production file for Docker/Vite build..."
+cat <<EOF > .env.production
+VITE_FIREBASE_API_KEY="${VITE_FIREBASE_API_KEY}"
+VITE_FIREBASE_AUTH_DOMAIN="${VITE_FIREBASE_AUTH_DOMAIN}"
+VITE_FIREBASE_PROJECT_ID="${VITE_FIREBASE_PROJECT_ID}"
+VITE_FIREBASE_STORAGE_BUCKET="${VITE_FIREBASE_STORAGE_BUCKET}"
+VITE_FIREBASE_MESSAGING_SENDER_ID="${VITE_FIREBASE_MESSAGING_SENDER_ID}"
+VITE_FIREBASE_APP_ID="${VITE_FIREBASE_APP_ID}"
+VITE_FIREBASE_MEASUREMENT_ID="${VITE_FIREBASE_MEASUREMENT_ID}"
+VITE_FIREBASE_FIRESTORE_DATABASE_ID="${VITE_FIREBASE_FIRESTORE_DATABASE_ID}"
+EOF
+
+# Ensure cleanup on exit
+trap 'echo "🧹 Cleaning up temporary build files..."; rm -f .env.production' EXIT INT TERM
+
 # 7. Build and push image using Cloud Build
 IMAGE_TAG="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY_NAME}/app:latest"
 echo "🛠️  Building and pushing Docker image to Artifact Registry via Cloud Build..."
